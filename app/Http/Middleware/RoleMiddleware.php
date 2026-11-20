@@ -10,26 +10,27 @@ use Symfony\Component\HttpFoundation\Response;
 class RoleMiddleware
 {
     /**
-     * Handle an incoming request.
-     * Menerima parameter role, e.g. role:Owner,Sales,Admin Penjualan
+     * Validasi role user yang sedang login terhadap relasi `users.id_role` -> `role`.
+     * Contoh pemakaian: ->middleware('role:Owner,Admin Pembelian')
      */
-    public function handle(Request $request, Closure $next, ...$roles): Response
+    public function handle(Request $request, Closure $next, string ...$roles): Response
     {
-        if (!Auth::check()) {
+        if (! Auth::check()) {
             if ($request->expectsJson()) {
                 return response()->json(['message' => 'Unauthenticated.'], 401);
             }
+
             return redirect()->guest(route('login'));
         }
 
         $user = Auth::user();
 
-        // Jika tidak ada batasan role spesifik, teruskan
+        // Tanpa batasan role spesifik, teruskan request
         if (empty($roles)) {
             return $next($request);
         }
 
-        // Super Admin selalu memiliki akses bypass
+        // Owner dan super admin (U000) memiliki akses penuh lintas modul
         if ($user->hasRole('Owner') || $user->id_user === 'U000') {
             return $next($request);
         }
@@ -40,12 +41,14 @@ class RoleMiddleware
             }
         }
 
+        $roleName = $user->role?->nama_role ?? 'Tanpa Role';
+
         if ($request->expectsJson()) {
             return response()->json([
-                'message' => 'Forbidden. Role Anda (' . ($user->role->nama_role ?? 'Tanpa Role') . ') tidak memiliki izin mengakses modul ini.'
+                'message' => "Forbidden. Role Anda ({$roleName}) tidak memiliki izin mengakses modul ini.",
             ], 403);
         }
 
-        abort(403, 'Akses Ditolak: Anda tidak memiliki wewenang untuk mengakses halaman ini.');
+        abort(403, "Akses Ditolak: role {$roleName} tidak memiliki wewenang untuk mengakses halaman ini.");
     }
 }

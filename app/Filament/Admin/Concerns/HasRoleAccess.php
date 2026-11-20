@@ -12,23 +12,30 @@ trait HasRoleAccess
         return ['Owner'];
     }
 
+    public static function canViewAny(): bool
+    {
+        $user = auth()->user();
+
+        return $user !== null && $user->hasAnyRole(static::allowedRoles());
+    }
+
     public static function canAccess(): bool
     {
-        return (bool) auth()->user()?->hasAnyRole(static::allowedRoles());
+        return static::canViewAny();
     }
 
     public static function canCreate(): bool
     {
-        return static::canAccess();
+        return static::canViewAny();
     }
 
     public static function canEdit($record): bool
     {
-        return static::canAccess();
+        return static::canViewAny();
     }
 
     public static function canDelete($record): bool
     {
-        return static::canAccess();
+        return static::canViewAny();
     }
 }
