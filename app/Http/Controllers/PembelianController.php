@@ -2,8 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Barang;
 use App\Models\DetailPembelian;
 use App\Models\Pembelian;
+use App\Models\PurchaseOrder;
+use App\Models\Supplier;
 use App\Services\DocumentNumberGenerator;
 use App\Services\JournalPostingService;
 use App\Services\StockService;
@@ -27,12 +30,11 @@ class PembelianController extends Controller
     {
         $query = Pembelian::with(['supplier', 'user', 'verifier']);
 
-        if ($request->filled('search')) {
-            $s = $request->search;
-            $query->where('nota_pembelian', 'LIKE', "%{$s}%")
-                ->orWhereHas('supplier', function ($q) use ($s) {
-                    $q->where('nama_supplier', 'LIKE', "%{$s}%");
-                });
+        if ($s = $request->input('search')) {
+            $query->where(function ($q) use ($s) {
+                $q->where('nota_pembelian', 'LIKE', "%{$s}%")
+                    ->orWhereHas('supplier', fn ($sub) => $sub->where('nama_supplier', 'LIKE', "%{$s}%"));
+            });
         }
 
         if ($request->filled('status')) {
@@ -47,13 +49,17 @@ class PembelianController extends Controller
             $query->periode($request->mulai, $request->selesai);
         }
 
-        $pembelian = $query->orderBy('tanggal', 'desc')->paginate(15);
+        $pembelian = $query->orderBy('tanggal', 'desc')->paginate(15)->withQueryString();
 
         if ($request->wantsJson()) {
             return response()->json($pembelian);
         }
 
-        return view('transaksi.pembelian.index', compact('pembelian'));
+        $suppliers = Supplier::orderBy('nama_supplier')->get();
+        $barangs = Barang::orderBy('nama_barang')->get();
+        $purchaseOrders = PurchaseOrder::whereNotIn('status', ['Selesai', 'Dibatalkan'])->orderBy('no_po', 'desc')->get();
+
+        return view('transaksi.pembelian.index', compact('pembelian', 'suppliers', 'barangs', 'purchaseOrders'));
     }
 
     public function store(Request $request)
@@ -70,47 +76,58 @@ class PembelianController extends Controller
             'items.*.harga_satuan' => 'required|numeric|min:0',
         ]);
 
-        return DB::transaction(function () use ($request) {
-            $nota = DocumentNumberGenerator::generate('PB', 'pembelian', 'nota_pembelian');
-            $total = 0;
+        $total = 0;
+        foreach ($request->items as $item) {
+            $total += $item['jumlah'] * $item['harga_satuan'];
+        }
 
-            foreach ($request->items as $item) {
-                $total += $item['jumlah'] * $item['harga_satuan'];
-            }
+        try {
+            $pembelian = DB::transaction(function () use ($request, $total) {
+                $nota = DocumentNumberGenerator::generate('PB', 'pembelian', 'nota_pembelian', $request->tanggal);
 
-            $pembelian = Pembelian::create([
-                'nota_pembelian' => $nota,
-                'tanggal' => $request->tanggal,
-                'id_supplier' => $request->id_supplier,
-                'id_user' => Auth::user()->id_user ?? Auth::id(),
-                'total' => $total,
-                'metode_pembayaran' => $request->metode_pembayaran,
-                'jatuh_tempo' => $request->metode_pembayaran === 'Kredit' ? $request->jatuh_tempo : null,
-                'status_verifikasi' => 'Menunggu',
-                'no_po' => $request->no_po,
-            ]);
-
-            foreach ($request->items as $item) {
-                DetailPembelian::create([
+                $pembelian = Pembelian::create([
                     'nota_pembelian' => $nota,
-                    'kode_barang' => $item['kode_barang'],
-                    'jumlah' => $item['jumlah'],
-                    'harga_satuan' => $item['harga_satuan'],
-                    'subtotal' => $item['jumlah'] * $item['harga_satuan'],
+                    'tanggal' => $request->tanggal,
+                    'id_supplier' => $request->id_supplier,
+                    'id_user' => Auth::user()->id_user ?? Auth::id(),
+                    'total' => $total,
+                    'metode_pembayaran' => $request->metode_pembayaran,
+                    'jatuh_tempo' => $request->metode_pembayaran === 'Kredit' ? $request->jatuh_tempo : null,
+                    'status_verifikasi' => 'Menunggu',
+                    'no_po' => $request->no_po,
                 ]);
-            }
 
+                foreach ($request->items as $item) {
+                    DetailPembelian::create([
+                        'nota_pembelian' => $nota,
+                        'kode_barang' => $item['kode_barang'],
+                        'jumlah' => $item['jumlah'],
+                        'harga_satuan' => $item['harga_satuan'],
+                        'subtotal' => $item['jumlah'] * $item['harga_satuan'],
+                    ]);
+                }
+
+                return $pembelian;
+            });
+        } catch (Exception $e) {
             if ($request->wantsJson()) {
-                return response()->json(['message' => 'Pembelian berhasil dicatat dan menunggu verifikasi', 'data' => $pembelian->load('details')], 201);
+                return response()->json(['message' => $e->getMessage()], 422);
             }
 
-            return redirect()->route('pembelian.index')->with('success', "Nota Pembelian {$nota} berhasil dicatat.");
-        });
+            return back()->withInput()->with('error', $e->getMessage());
+        }
+
+        if ($request->wantsJson()) {
+            return response()->json(['message' => 'Pembelian berhasil dicatat dan menunggu verifikasi', 'data' => $pembelian->load('details')], 201);
+        }
+
+        return redirect()->route('pembelian.index')->with('success', "Nota Pembelian {$pembelian->nota_pembelian} berhasil dicatat.");
     }
 
     public function show(string $nota_pembelian)
     {
         $pembelian = Pembelian::with(['supplier', 'user', 'verifier', 'details.barang', 'juPembelian.coa'])->findOrFail($nota_pembelian);
+
         return response()->json($pembelian);
     }
 
@@ -119,68 +136,70 @@ class PembelianController extends Controller
      */
     public function verify(Request $request, string $nota_pembelian)
     {
-        $pembelian = Pembelian::with('details')->findOrFail($nota_pembelian);
+        $pembelian = Pembelian::with(['details', 'supplier'])->findOrFail($nota_pembelian);
         $currentUser = Auth::user();
 
         if ($pembelian->status_verifikasi === 'Terverifikasi') {
             return back()->with('info', "Nota Pembelian {$nota_pembelian} sudah terverifikasi sebelumnya.");
         }
 
-        // Aturan Segregation of Duties: Penginput dilarang memverifikasi transaksinya sendiri
-        if ($pembelian->id_user === ($currentUser->id_user ?? Auth::id()) && !$currentUser->hasRole('Owner') && $currentUser->id_user !== 'U000') {
+        if ($pembelian->id_user === ($currentUser->id_user ?? Auth::id()) && ! $currentUser->hasRole('Owner') && $currentUser->id_user !== 'U000') {
             abort(403, 'Pelanggaran Segregation of Duties: Anda tidak berhak memverifikasi transaksi yang Anda buat sendiri.');
         }
 
-        DB::transaction(function () use ($pembelian, $currentUser) {
-            // 1. Mutasi Stok Masuk & Kartu Stok
-            foreach ($pembelian->details as $item) {
-                $this->stockService->recordMasuk(
-                    $item->kode_barang,
-                    $item->jumlah,
-                    (float) $item->harga_satuan,
-                    'Pembelian',
+        try {
+            DB::transaction(function () use ($pembelian, $currentUser) {
+                foreach ($pembelian->details as $item) {
+                    $this->stockService->recordMasuk(
+                        $item->kode_barang,
+                        $item->jumlah,
+                        (float) $item->harga_satuan,
+                        'Pembelian',
+                        $pembelian->nota_pembelian,
+                        "Penerimaan barang dari {$pembelian->supplier->nama_supplier}"
+                    );
+                }
+
+                $kreditAkun = $pembelian->metode_pembayaran === 'Tunai' ? 1101 : 2101;
+                $keteranganKredit = $pembelian->metode_pembayaran === 'Tunai'
+                    ? "Pengeluaran kas pembelian tunai nota {$pembelian->nota_pembelian}"
+                    : "Hutang usaha atas pembelian nota {$pembelian->nota_pembelian}";
+
+                $entries = [
+                    [
+                        'kode_akun' => 1104,
+                        'debit' => (int) round((float) $pembelian->total),
+                        'kredit' => 0,
+                        'keterangan' => "Penambahan persediaan atas nota {$pembelian->nota_pembelian}",
+                    ],
+                    [
+                        'kode_akun' => $kreditAkun,
+                        'debit' => 0,
+                        'kredit' => (int) round((float) $pembelian->total),
+                        'keterangan' => $keteranganKredit,
+                    ],
+                ];
+
+                $this->journalService->post(
+                    'ju_pembelian',
+                    'nota_pembelian',
                     $pembelian->nota_pembelian,
-                    "Penerimaan barang dari {$pembelian->supplier->nama_supplier}"
+                    $pembelian->tanggal->toDateString(),
+                    $entries
                 );
+
+                $pembelian->status_verifikasi = 'Terverifikasi';
+                $pembelian->verified_by = $currentUser->id_user ?? Auth::id();
+                $pembelian->verified_at = now();
+                $pembelian->save();
+            });
+        } catch (Exception $e) {
+            if ($request->wantsJson()) {
+                return response()->json(['message' => $e->getMessage()], 422);
             }
 
-            // 2. Posting Jurnal Umum
-            // (D) Persediaan Barang Dagang (1104) = Total
-            // (K) Kas (1101) jika Tunai, atau Hutang Usaha (2101) jika Kredit
-            $kreditAkun = $pembelian->metode_pembayaran === 'Tunai' ? 1101 : 2101;
-            $keteranganKredit = $pembelian->metode_pembayaran === 'Tunai'
-                ? "Pengeluaran kas pembelian tunai nota {$pembelian->nota_pembelian}"
-                : "Hutang usaha atas pembelian nota {$pembelian->nota_pembelian}";
-
-            $entries = [
-                [
-                    'kode_akun' => 1104,
-                    'debit' => (int) $pembelian->total,
-                    'kredit' => 0,
-                    'keterangan' => "Penambahan persediaan atas nota {$pembelian->nota_pembelian}",
-                ],
-                [
-                    'kode_akun' => $kreditAkun,
-                    'debit' => 0,
-                    'kredit' => (int) $pembelian->total,
-                    'keterangan' => $keteranganKredit,
-                ],
-            ];
-
-            $this->journalService->post(
-                'ju_pembelian',
-                'nota_pembelian',
-                $pembelian->nota_pembelian,
-                $pembelian->tanggal->toDateString(),
-                $entries
-            );
-
-            // 3. Update status verifikasi
-            $pembelian->status_verifikasi = 'Terverifikasi';
-            $pembelian->verified_by = $currentUser->id_user ?? Auth::id();
-            $pembelian->verified_at = now();
-            $pembelian->save();
-        });
+            return back()->with('error', $e->getMessage());
+        }
 
         if ($request->wantsJson()) {
             return response()->json(['message' => "Pembelian {$nota_pembelian} berhasil diverifikasi dan jurnal diposting."]);

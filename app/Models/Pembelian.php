@@ -97,6 +97,22 @@ class Pembelian extends Model
         return (float) max(0, $this->total - $terbayar - $diretur);
     }
 
+    public function getSisaHutangTersediaAttribute(): float
+    {
+        if ($this->metode_pembayaran !== 'Kredit') {
+            return 0.0;
+        }
+
+        $terbayarDanRetur = (float) $this->pembayaranHutang()
+            ->where('status_verifikasi', '!=', 'Ditolak')
+            ->sum('total')
+            + (float) $this->retur()
+                ->where('status_verifikasi', '!=', 'Ditolak')
+                ->sum('total');
+
+        return (float) max(0, $this->total - $terbayarDanRetur);
+    }
+
     public function getStatusLunasAttribute(): string
     {
         if ($this->metode_pembayaran === 'Tunai') {

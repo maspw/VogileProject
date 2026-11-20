@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Barang;
 use App\Models\DetailPo;
 use App\Models\PurchaseOrder;
+use App\Models\Supplier;
 use App\Services\DocumentNumberGenerator;
 use Exception;
 use Illuminate\Http\Request;
@@ -16,12 +18,11 @@ class PurchaseOrderController extends Controller
     {
         $query = PurchaseOrder::with(['supplier', 'user']);
 
-        if ($request->filled('search')) {
-            $s = $request->search;
-            $query->where('no_po', 'LIKE', "%{$s}%")
-                ->orWhereHas('supplier', function ($q) use ($s) {
-                    $q->where('nama_supplier', 'LIKE', "%{$s}%");
-                });
+        if ($s = $request->input('search')) {
+            $query->where(function ($q) use ($s) {
+                $q->where('no_po', 'LIKE', "%{$s}%")
+                    ->orWhereHas('supplier', fn ($sub) => $sub->where('nama_supplier', 'LIKE', "%{$s}%"));
+            });
         }
 
         if ($request->filled('status')) {
@@ -32,13 +33,16 @@ class PurchaseOrderController extends Controller
             $query->periode($request->mulai, $request->selesai);
         }
 
-        $orders = $query->orderBy('tanggal', 'desc')->paginate(15);
+        $orders = $query->orderBy('tanggal', 'desc')->paginate(15)->withQueryString();
 
         if ($request->wantsJson()) {
             return response()->json($orders);
         }
 
-        return view('transaksi.po.index', compact('orders'));
+        $suppliers = Supplier::orderBy('nama_supplier')->get();
+        $barangs = Barang::orderBy('nama_barang')->get();
+
+        return view('transaksi.po.index', compact('orders', 'suppliers', 'barangs'));
     }
 
     public function store(Request $request)
@@ -53,13 +57,13 @@ class PurchaseOrderController extends Controller
             'items.*.harga_satuan' => 'required|numeric|min:0',
         ]);
 
-        return DB::transaction(function () use ($request) {
-            $noPo = DocumentNumberGenerator::generate('PO', 'purchase_order', 'no_po');
-            $total = 0;
+        $total = 0;
+        foreach ($request->items as $item) {
+            $total += $item['jumlah'] * $item['harga_satuan'];
+        }
 
-            foreach ($request->items as $item) {
-                $total += $item['jumlah'] * $item['harga_satuan'];
-            }
+        $po = DB::transaction(function () use ($request, $total) {
+            $noPo = DocumentNumberGenerator::generate('PO', 'purchase_order', 'no_po', $request->tanggal);
 
             $po = PurchaseOrder::create([
                 'no_po' => $noPo,
@@ -81,17 +85,20 @@ class PurchaseOrderController extends Controller
                 ]);
             }
 
-            if ($request->wantsJson()) {
-                return response()->json(['message' => 'Purchase Order berhasil dibuat', 'data' => $po->load('details')], 201);
-            }
-
-            return redirect()->route('po.index')->with('success', "PO {$noPo} berhasil dibuat.");
+            return $po;
         });
+
+        if ($request->wantsJson()) {
+            return response()->json(['message' => 'Purchase Order berhasil dibuat', 'data' => $po->load('details')], 201);
+        }
+
+        return redirect()->route('po.index')->with('success', "PO {$po->no_po} berhasil dibuat.");
     }
 
     public function show(string $no_po)
     {
         $po = PurchaseOrder::with(['supplier', 'user', 'details.barang'])->findOrFail($no_po);
+
         return response()->json($po);
     }
 
@@ -102,6 +109,17 @@ class PurchaseOrderController extends Controller
         ]);
 
         $po = PurchaseOrder::findOrFail($no_po);
+
+        if (in_array($po->status, ['Selesai', 'Dibatalkan'], true)) {
+            $message = "PO {$no_po} sudah {$po->status} dan tidak dapat diubah lagi.";
+
+            if ($request->wantsJson()) {
+                return response()->json(['message' => $message], 422);
+            }
+
+            return back()->with('error', $message);
+        }
+
         $po->status = $request->status;
         $po->save();
 

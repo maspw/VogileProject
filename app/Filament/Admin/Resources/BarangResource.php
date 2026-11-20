@@ -2,22 +2,40 @@
 
 namespace App\Filament\Admin\Resources;
 
+use App\Filament\Admin\Concerns\HasRoleAccess;
 use App\Filament\Admin\Resources\BarangResource\Pages;
-use App\Filament\Admin\Resources\BarangResource\RelationManagers;
 use App\Models\Barang;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
-use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\SoftDeletingScope;
 
 class BarangResource extends Resource
 {
+    use HasRoleAccess;
+
     protected static ?string $model = Barang::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-rectangle-stack';
+    protected static ?string $navigationIcon = 'heroicon-o-cube';
+
+    protected static ?string $navigationGroup = 'Master Data';
+
+    protected static ?string $modelLabel = 'Barang';
+
+    protected static ?string $pluralModelLabel = 'Barang';
+
+    protected static ?string $recordTitleAttribute = 'nama_barang';
+
+    public static function allowedRoles(): array
+    {
+        return ['Owner', 'Admin Pembelian', 'Admin Penjualan'];
+    }
+
+    public static function canDelete($record): bool
+    {
+        return false;
+    }
 
     public static function form(Form $form): Form
     {
@@ -26,26 +44,29 @@ class BarangResource extends Resource
                 Forms\Components\TextInput::make('nama_barang')
                     ->required()
                     ->maxLength(150),
-                Forms\Components\TextInput::make('jumlah_barang')
-                    ->required()
-                    ->numeric()
-                    ->default(0),
-                Forms\Components\TextInput::make('harga_barang')
-                    ->required()
-                    ->numeric()
-                    ->default(0.00),
-                Forms\Components\TextInput::make('hpp')
-                    ->required()
-                    ->numeric()
-                    ->default(0.00),
                 Forms\Components\TextInput::make('satuan')
                     ->required()
                     ->maxLength(20)
                     ->default('Pcs'),
-                Forms\Components\TextInput::make('min_stok')
+                Forms\Components\TextInput::make('harga_barang')
+                    ->label('Harga Jual')
                     ->required()
                     ->numeric()
-                    ->default(10),
+                    ->prefix('Rp')
+                    ->default(0),
+                Forms\Components\TextInput::make('hpp')
+                    ->label('HPP (rata-rata)')
+                    ->required()
+                    ->numeric()
+                    ->prefix('Rp')
+                    ->default(0)
+                    ->helperText('Diperbarui otomatis oleh sistem saat pembelian diverifikasi.'),
+                Forms\Components\TextInput::make('min_stok')
+                    ->label('Stok Minimum')
+                    ->required()
+                    ->numeric()
+                    ->default(10)
+                    ->helperText('Jumlah stok dikelola melalui transaksi pembelian/penjualan agar kartu stok tetap konsisten.'),
             ]);
     }
 
@@ -54,42 +75,55 @@ class BarangResource extends Resource
         return $table
             ->columns([
                 Tables\Columns\TextColumn::make('kode_barang')
-                    ->searchable(),
-                Tables\Columns\TextColumn::make('nama_barang')
-                    ->searchable(),
-                Tables\Columns\TextColumn::make('jumlah_barang')
-                    ->numeric()
+                    ->label('Kode')
+                    ->searchable()
                     ->sortable(),
-                Tables\Columns\TextColumn::make('harga_barang')
+                Tables\Columns\TextColumn::make('nama_barang')
+                    ->searchable()
+                    ->sortable(),
+                Tables\Columns\TextColumn::make('jumlah_barang')
+                    ->label('Stok')
                     ->numeric()
+                    ->sortable()
+                    ->badge()
+                    ->color(fn (Barang $record): string => match ($record->status_stok) {
+                        'Habis' => 'danger',
+                        'Stok Menipis' => 'warning',
+                        default => 'success',
+                    }),
+                Tables\Columns\TextColumn::make('harga_barang')
+                    ->label('Harga Jual')
+                    ->money('IDR')
                     ->sortable(),
                 Tables\Columns\TextColumn::make('hpp')
-                    ->numeric()
+                    ->label('HPP')
+                    ->money('IDR')
                     ->sortable(),
                 Tables\Columns\TextColumn::make('satuan')
                     ->searchable(),
                 Tables\Columns\TextColumn::make('min_stok')
+                    ->label('Min.')
                     ->numeric()
                     ->sortable(),
             ])
             ->filters([
-                //
+                Tables\Filters\SelectFilter::make('status')
+                    ->options([
+                        'menipis' => 'Stok Menipis',
+                        'habis' => 'Stok Habis',
+                    ])
+                    ->query(function ($query, array $data) {
+                        return match ($data['value'] ?? null) {
+                            'menipis' => $query->stokMenipis(),
+                            'habis' => $query->stokHabis(),
+                            default => $query,
+                        };
+                    }),
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),
             ])
-            ->bulkActions([
-                Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
-                ]),
-            ]);
-    }
-
-    public static function getRelations(): array
-    {
-        return [
-            //
-        ];
+            ->bulkActions([]);
     }
 
     public static function getPages(): array

@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Requests\StoreSupplierRequest;
 use App\Http\Requests\UpdateSupplierRequest;
 use App\Models\Supplier;
+use App\Services\DocumentNumberGenerator;
 use Illuminate\Http\Request;
 
 class SupplierController extends Controller
@@ -13,14 +14,15 @@ class SupplierController extends Controller
     {
         $query = Supplier::query();
 
-        if ($request->filled('search')) {
-            $s = $request->search;
-            $query->where('id_supplier', 'LIKE', "%{$s}%")
-                ->orWhere('nama_supplier', 'LIKE', "%{$s}%")
-                ->orWhere('no_telp', 'LIKE', "%{$s}%");
+        if ($s = $request->input('search')) {
+            $query->where(function ($q) use ($s) {
+                $q->where('id_supplier', 'LIKE', "%{$s}%")
+                    ->orWhere('nama_supplier', 'LIKE', "%{$s}%")
+                    ->orWhere('no_telp', 'LIKE', "%{$s}%");
+            });
         }
 
-        $supplier = $query->orderBy('nama_supplier')->paginate(15);
+        $supplier = $query->orderBy('nama_supplier')->paginate(15)->withQueryString();
 
         if ($request->wantsJson()) {
             return response()->json($supplier);
@@ -31,7 +33,11 @@ class SupplierController extends Controller
 
     public function store(StoreSupplierRequest $request)
     {
-        $supplier = Supplier::create($request->validated());
+        $data = $request->validated();
+        $data['id_supplier'] = ($data['id_supplier'] ?? null)
+            ?: DocumentNumberGenerator::master('SUP', 'supplier', 'id_supplier');
+
+        $supplier = Supplier::create($data);
 
         if ($request->wantsJson()) {
             return response()->json(['message' => 'Supplier berhasil ditambahkan', 'data' => $supplier], 201);

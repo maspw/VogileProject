@@ -27,10 +27,21 @@ class AuthController extends Controller
         $fieldType = filter_var($loginInput, FILTER_VALIDATE_EMAIL) ? 'email' : 'username';
 
         if (Auth::attempt([$fieldType => $loginInput, 'password' => $credentials['password']], $request->boolean('remember'))) {
+            $user = Auth::user();
+
+            if (! $user->role) {
+                Auth::logout();
+                $request->session()->invalidate();
+
+                return back()->withErrors([
+                    'login' => 'Akun Anda belum memiliki role yang valid. Hubungi Owner.',
+                ])->onlyInput('login');
+            }
+
             $request->session()->regenerate();
 
             return redirect()->intended(route('dashboard'))
-                ->with('success', 'Selamat datang kembali, ' . Auth::user()->name . '!');
+                ->with('success', 'Selamat datang kembali, ' . ($user->nama_user ?? $user->name) . '!');
         }
 
         return back()->withErrors([

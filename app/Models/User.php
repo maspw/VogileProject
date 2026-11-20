@@ -46,7 +46,7 @@ class User extends Authenticatable implements FilamentUser
 
     public function canAccessPanel(Panel $panel): bool
     {
-        return true;
+        return $this->role !== null;
     }
 
     // Role Helper Methods
@@ -57,10 +57,19 @@ class User extends Authenticatable implements FilamentUser
         }
 
         if (is_array($roles)) {
-            return in_array($this->role->nama_role, $roles);
+            return $this->hasAnyRole($roles);
         }
 
         return strtolower($this->role->nama_role) === strtolower($roles);
+    }
+
+    public function hasAnyRole(array $roles): bool
+    {
+        if (!$this->role) {
+            return false;
+        }
+
+        return in_array($this->role->nama_role, $roles, true);
     }
 
     public function isOwner(): bool

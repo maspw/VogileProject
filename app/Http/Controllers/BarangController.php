@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Requests\StoreBarangRequest;
 use App\Http\Requests\UpdateBarangRequest;
 use App\Models\Barang;
+use App\Services\DocumentNumberGenerator;
 use App\Services\StockService;
 use Exception;
 use Illuminate\Http\Request;
@@ -22,10 +23,11 @@ class BarangController extends Controller
     {
         $query = Barang::query();
 
-        if ($request->filled('search')) {
-            $s = $request->search;
-            $query->where('kode_barang', 'LIKE', "%{$s}%")
-                ->orWhere('nama_barang', 'LIKE', "%{$s}%");
+        if ($s = $request->input('search')) {
+            $query->where(function ($q) use ($s) {
+                $q->where('kode_barang', 'LIKE', "%{$s}%")
+                    ->orWhere('nama_barang', 'LIKE', "%{$s}%");
+            });
         }
 
         if ($request->filter === 'menipis') {
@@ -34,7 +36,7 @@ class BarangController extends Controller
             $query->stokHabis();
         }
 
-        $barang = $query->orderBy('nama_barang')->paginate(15);
+        $barang = $query->orderBy('nama_barang')->paginate(15)->withQueryString();
 
         if ($request->wantsJson()) {
             return response()->json($barang);
@@ -46,20 +48,31 @@ class BarangController extends Controller
     public function store(StoreBarangRequest $request)
     {
         $data = $request->validated();
+        $data['kode_barang'] = ($data['kode_barang'] ?? null)
+            ?: DocumentNumberGenerator::master('BRG', 'barang', 'kode_barang');
+
         $initialQty = (int) ($data['jumlah_barang'] ?? 0);
-        $data['jumlah_barang'] = 0; // Akan diisi melalui StockService kartu_stok jika initialQty > 0
+        $data['jumlah_barang'] = 0;
 
-        $barang = Barang::create($data);
+        try {
+            $barang = Barang::create($data);
 
-        if ($initialQty > 0) {
-            $this->stockService->recordMasuk(
-                $barang->kode_barang,
-                $initialQty,
-                (float) $barang->hpp,
-                'Saldo Awal',
-                'OPN-' . date('Ymd'),
-                'Saldo Awal Pendaftaran Barang Baru'
-            );
+            if ($initialQty > 0) {
+                $this->stockService->recordMasuk(
+                    $barang->kode_barang,
+                    $initialQty,
+                    (float) $barang->hpp,
+                    'Saldo Awal',
+                    'OPN-' . date('Ymd'),
+                    'Saldo Awal Pendaftaran Barang Baru'
+                );
+            }
+        } catch (Exception $e) {
+            if ($request->wantsJson()) {
+                return response()->json(['message' => $e->getMessage()], 422);
+            }
+
+            return back()->withInput()->with('error', $e->getMessage());
         }
 
         if ($request->wantsJson()) {
@@ -95,7 +108,7 @@ class BarangController extends Controller
         $barang = Barang::findOrFail($kode_barang);
 
         // Cek jika barang sudah memiliki riwayat mutasi/transaksi
-        if ($barang->kartuStok()->count() > 1 || $barang->detailPenjualan()->exists() || $barang->detailPembelian()->exists()) {
+        if ($barang->hasTransaksi()) {
             return back()->with('error', "Barang {$barang->nama_barang} tidak dapat dihapus karena sudah memiliki riwayat transaksi/stok.");
         }
 

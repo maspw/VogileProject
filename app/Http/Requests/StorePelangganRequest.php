@@ -14,7 +14,7 @@ class StorePelangganRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'id_pelanggan' => 'required|string|max:20|unique:pelanggan,id_pelanggan',
+            'id_pelanggan' => 'nullable|string|max:20|unique:pelanggan,id_pelanggan',
             'nama' => 'required|string|max:100',
             'alamat' => 'nullable|string',
             'no_telp' => 'nullable|string|max:20',

@@ -20,6 +20,7 @@ class PelunasanPiutang extends Model
         'id_penjualan',
         'tanggal',
         'total',
+        'metode_bayar',
         'id_user',
         'status_verifikasi',
         'verified_by',

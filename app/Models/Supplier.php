@@ -21,6 +21,10 @@ class Supplier extends Model
         'email',
     ];
 
+    protected $appends = [
+        'total_hutang',
+    ];
+
     public function pembelian(): HasMany
     {
         return $this->hasMany(Pembelian::class, 'id_supplier', 'id_supplier');
@@ -33,10 +37,19 @@ class Supplier extends Model
 
     public function getTotalHutangAttribute(): float
     {
-        return (float) $this->pembelian()
+        $pembelian = $this->pembelian()
             ->where('metode_pembayaran', 'Kredit')
+            ->where('status_verifikasi', 'Terverifikasi');
+
+        $ids = (clone $pembelian)->pluck('nota_pembelian');
+        $total = (float) (clone $pembelian)->sum('total');
+        $terbayar = (float) PembayaranHutang::whereIn('nota_pembelian', $ids)
             ->where('status_verifikasi', 'Terverifikasi')
-            ->get()
-            ->sum('sisa_hutang');
+            ->sum('total');
+        $diretur = (float) ReturPembelian::whereIn('nota_pembelian', $ids)
+            ->where('status_verifikasi', 'Terverifikasi')
+            ->sum('total');
+
+        return (float) max(0, $total - $terbayar - $diretur);
     }
 }

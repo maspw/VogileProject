@@ -20,6 +20,8 @@ class Beban extends Model
         'nama_beban',
         'tanggal',
         'total',
+        'kode_akun',
+        'metode_bayar',
         'id_user',
         'status_verifikasi',
         'verified_by',
@@ -32,8 +34,14 @@ class Beban extends Model
         return [
             'tanggal' => 'date',
             'total' => 'decimal:2',
+            'kode_akun' => 'integer',
             'verified_at' => 'datetime',
         ];
+    }
+
+    public function coa(): BelongsTo
+    {
+        return $this->belongsTo(Coa::class, 'kode_akun', 'kode_akun');
     }
 
     public function user(): BelongsTo

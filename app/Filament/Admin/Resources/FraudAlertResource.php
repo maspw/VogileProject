@@ -2,22 +2,28 @@
 
 namespace App\Filament\Admin\Resources;
 
+use App\Filament\Admin\Concerns\HasRoleAccess;
 use App\Filament\Admin\Resources\FraudAlertResource\Pages;
-use App\Filament\Admin\Resources\FraudAlertResource\RelationManagers;
 use App\Models\FraudAlert;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
-use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\SoftDeletingScope;
 
 class FraudAlertResource extends Resource
 {
+    use HasRoleAccess;
+
     protected static ?string $model = FraudAlert::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-rectangle-stack';
+    protected static ?string $navigationIcon = 'heroicon-o-shield-exclamation';
+
+    protected static ?string $navigationGroup = 'Pengawasan';
+
+    protected static ?string $modelLabel = 'Fraud Alert';
+
+    protected static ?string $pluralModelLabel = 'Fraud Alert';
 
     public static function form(Form $form): Form
     {
@@ -29,35 +35,48 @@ class FraudAlertResource extends Resource
                 Forms\Components\TextInput::make('kategori')
                     ->required()
                     ->maxLength(50),
-                Forms\Components\TextInput::make('tingkat_risiko')
+                Forms\Components\Select::make('tingkat_risiko')
                     ->required()
-                    ->maxLength(20)
+                    ->options([
+                        'Rendah' => 'Rendah',
+                        'Sedang' => 'Sedang',
+                        'Tinggi' => 'Tinggi',
+                        'Kritis' => 'Kritis',
+                    ])
                     ->default('Sedang'),
                 Forms\Components\TextInput::make('skor_risiko')
                     ->required()
                     ->numeric()
+                    ->minValue(0)
+                    ->maxValue(100)
                     ->default(0),
                 Forms\Components\TextInput::make('no_referensi')
-                    ->maxLength(50)
-                    ->default(null),
+                    ->maxLength(50),
                 Forms\Components\TextInput::make('tabel_referensi')
-                    ->maxLength(50)
-                    ->default(null),
+                    ->maxLength(50),
                 Forms\Components\Textarea::make('deskripsi')
                     ->required()
                     ->columnSpanFull(),
                 Forms\Components\Textarea::make('bukti_json')
+                    ->label('Bukti (JSON)')
+                    ->rule('json')
+                    ->rows(5)
                     ->columnSpanFull(),
-                Forms\Components\TextInput::make('status')
+                Forms\Components\Select::make('status')
                     ->required()
-                    ->maxLength(30)
+                    ->options([
+                        'Menunggu Review' => 'Menunggu Review',
+                        'Dalam Investigasi' => 'Dalam Investigasi',
+                        'Selesai' => 'Selesai',
+                        'Abaikan' => 'Abaikan',
+                    ])
                     ->default('Menunggu Review'),
                 Forms\Components\TextInput::make('id_user_pelaku')
-                    ->maxLength(20)
-                    ->default(null),
+                    ->label('ID User Pelaku')
+                    ->maxLength(20),
                 Forms\Components\TextInput::make('id_user_reviewer')
-                    ->maxLength(20)
-                    ->default(null),
+                    ->label('ID User Reviewer')
+                    ->maxLength(20),
                 Forms\Components\Textarea::make('catatan_review')
                     ->columnSpanFull(),
             ]);
@@ -66,53 +85,60 @@ class FraudAlertResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            ->defaultSort('created_at', 'desc')
             ->columns([
                 Tables\Columns\TextColumn::make('kode_aturan')
+                    ->label('Kode')
                     ->searchable(),
                 Tables\Columns\TextColumn::make('kategori')
                     ->searchable(),
                 Tables\Columns\TextColumn::make('tingkat_risiko')
-                    ->searchable(),
+                    ->label('Risiko')
+                    ->badge()
+                    ->color(fn (string $state): string => match ($state) {
+                        'Kritis' => 'danger',
+                        'Tinggi' => 'warning',
+                        'Sedang' => 'info',
+                        default => 'gray',
+                    }),
                 Tables\Columns\TextColumn::make('skor_risiko')
+                    ->label('Skor')
                     ->numeric()
                     ->sortable(),
                 Tables\Columns\TextColumn::make('no_referensi')
-                    ->searchable(),
-                Tables\Columns\TextColumn::make('tabel_referensi')
+                    ->label('Referensi')
                     ->searchable(),
                 Tables\Columns\TextColumn::make('status')
-                    ->searchable(),
-                Tables\Columns\TextColumn::make('id_user_pelaku')
-                    ->searchable(),
-                Tables\Columns\TextColumn::make('id_user_reviewer')
-                    ->searchable(),
+                    ->badge(),
+                Tables\Columns\TextColumn::make('pelaku.nama_user')
+                    ->label('Pelaku')
+                    ->placeholder('-'),
                 Tables\Columns\TextColumn::make('created_at')
-                    ->dateTime()
-                    ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: true),
-                Tables\Columns\TextColumn::make('updated_at')
-                    ->dateTime()
-                    ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->label('Dibuat')
+                    ->dateTime('d/m/Y H:i')
+                    ->sortable(),
             ])
             ->filters([
-                //
+                Tables\Filters\SelectFilter::make('tingkat_risiko')
+                    ->label('Tingkat Risiko')
+                    ->options([
+                        'Rendah' => 'Rendah',
+                        'Sedang' => 'Sedang',
+                        'Tinggi' => 'Tinggi',
+                        'Kritis' => 'Kritis',
+                    ]),
+                Tables\Filters\SelectFilter::make('status')
+                    ->options([
+                        'Menunggu Review' => 'Menunggu Review',
+                        'Dalam Investigasi' => 'Dalam Investigasi',
+                        'Selesai' => 'Selesai',
+                        'Abaikan' => 'Abaikan',
+                    ]),
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),
             ])
-            ->bulkActions([
-                Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
-                ]),
-            ]);
-    }
-
-    public static function getRelations(): array
-    {
-        return [
-            //
-        ];
+            ->bulkActions([]);
     }
 
     public static function getPages(): array

@@ -2,115 +2,108 @@
 
 namespace App\Filament\Admin\Resources;
 
+use App\Filament\Admin\Concerns\HasRoleAccess;
 use App\Filament\Admin\Resources\PembelianResource\Pages;
-use App\Filament\Admin\Resources\PembelianResource\RelationManagers;
 use App\Models\Pembelian;
-use Filament\Forms;
-use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
-use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\SoftDeletingScope;
 
 class PembelianResource extends Resource
 {
+    use HasRoleAccess;
+
     protected static ?string $model = Pembelian::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-rectangle-stack';
+    protected static ?string $navigationIcon = 'heroicon-o-archive-box-arrow-down';
 
-    public static function form(Form $form): Form
+    protected static ?string $navigationGroup = 'Transaksi';
+
+    protected static ?string $modelLabel = 'Pembelian';
+
+    protected static ?string $pluralModelLabel = 'Pembelian';
+
+    public static function allowedRoles(): array
     {
-        return $form
-            ->schema([
-                Forms\Components\DatePicker::make('tanggal')
-                    ->required(),
-                Forms\Components\TextInput::make('id_supplier')
-                    ->maxLength(20)
-                    ->default(null),
-                Forms\Components\TextInput::make('id_user')
-                    ->maxLength(20)
-                    ->default(null),
-                Forms\Components\TextInput::make('total')
-                    ->required()
-                    ->numeric()
-                    ->default(0.00),
-                Forms\Components\TextInput::make('metode_pembayaran')
-                    ->required()
-                    ->maxLength(20)
-                    ->default('Tunai'),
-                Forms\Components\DatePicker::make('jatuh_tempo'),
-                Forms\Components\TextInput::make('status_verifikasi')
-                    ->required()
-                    ->maxLength(20)
-                    ->default('Menunggu'),
-                Forms\Components\TextInput::make('verified_by')
-                    ->maxLength(20)
-                    ->default(null),
-                Forms\Components\DateTimePicker::make('verified_at'),
-                Forms\Components\TextInput::make('no_po')
-                    ->maxLength(30)
-                    ->default(null),
-            ]);
+        return ['Owner', 'Admin Pembelian', 'Admin Hutang'];
+    }
+
+    public static function canCreate(): bool
+    {
+        return false;
+    }
+
+    public static function canEdit($record): bool
+    {
+        return false;
+    }
+
+    public static function canDelete($record): bool
+    {
+        return false;
     }
 
     public static function table(Table $table): Table
     {
         return $table
+            ->defaultSort('tanggal', 'desc')
             ->columns([
                 Tables\Columns\TextColumn::make('nota_pembelian')
-                    ->searchable(),
-                Tables\Columns\TextColumn::make('tanggal')
-                    ->date()
+                    ->label('No. Nota')
+                    ->searchable()
                     ->sortable(),
-                Tables\Columns\TextColumn::make('id_supplier')
-                    ->searchable(),
-                Tables\Columns\TextColumn::make('id_user')
+                Tables\Columns\TextColumn::make('tanggal')
+                    ->date('d/m/Y')
+                    ->sortable(),
+                Tables\Columns\TextColumn::make('supplier.nama_supplier')
+                    ->label('Supplier')
                     ->searchable(),
                 Tables\Columns\TextColumn::make('total')
-                    ->numeric()
+                    ->money('IDR')
                     ->sortable(),
                 Tables\Columns\TextColumn::make('metode_pembayaran')
-                    ->searchable(),
-                Tables\Columns\TextColumn::make('jatuh_tempo')
-                    ->date()
-                    ->sortable(),
+                    ->label('Metode')
+                    ->badge()
+                    ->color(fn (string $state): string => $state === 'Tunai' ? 'success' : 'warning'),
                 Tables\Columns\TextColumn::make('status_verifikasi')
-                    ->searchable(),
-                Tables\Columns\TextColumn::make('verified_by')
-                    ->searchable(),
-                Tables\Columns\TextColumn::make('verified_at')
-                    ->dateTime()
-                    ->sortable(),
-                Tables\Columns\TextColumn::make('no_po')
-                    ->searchable(),
+                    ->label('Status')
+                    ->badge()
+                    ->color(fn (string $state): string => $state === 'Terverifikasi' ? 'success' : 'warning'),
+                Tables\Columns\TextColumn::make('sisa_hutang')
+                    ->label('Sisa Hutang')
+                    ->money('IDR')
+                    ->state(fn (Pembelian $record): float => $record->sisa_hutang),
+                Tables\Columns\TextColumn::make('jatuh_tempo')
+                    ->label('Jatuh Tempo')
+                    ->date('d/m/Y')
+                    ->placeholder('-')
+                    ->toggleable(isToggledHiddenByDefault: true),
+                Tables\Columns\TextColumn::make('user.nama_user')
+                    ->label('Diinput')
+                    ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
-                //
+                Tables\Filters\SelectFilter::make('status_verifikasi')
+                    ->label('Status')
+                    ->options([
+                        'Menunggu' => 'Menunggu',
+                        'Terverifikasi' => 'Terverifikasi',
+                    ]),
+                Tables\Filters\SelectFilter::make('metode_pembayaran')
+                    ->label('Metode')
+                    ->options([
+                        'Tunai' => 'Tunai',
+                        'Kredit' => 'Kredit',
+                    ]),
             ])
-            ->actions([
-                Tables\Actions\EditAction::make(),
-            ])
-            ->bulkActions([
-                Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
-                ]),
-            ]);
-    }
-
-    public static function getRelations(): array
-    {
-        return [
-            //
-        ];
+            ->actions([])
+            ->bulkActions([]);
     }
 
     public static function getPages(): array
     {
         return [
             'index' => Pages\ListPembelians::route('/'),
-            'create' => Pages\CreatePembelian::route('/create'),
-            'edit' => Pages\EditPembelian::route('/{record}/edit'),
         ];
     }
 }

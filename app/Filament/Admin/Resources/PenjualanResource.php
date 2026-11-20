@@ -2,110 +2,109 @@
 
 namespace App\Filament\Admin\Resources;
 
+use App\Filament\Admin\Concerns\HasRoleAccess;
 use App\Filament\Admin\Resources\PenjualanResource\Pages;
-use App\Filament\Admin\Resources\PenjualanResource\RelationManagers;
 use App\Models\Penjualan;
-use Filament\Forms;
-use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
-use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\SoftDeletingScope;
 
 class PenjualanResource extends Resource
 {
+    use HasRoleAccess;
+
     protected static ?string $model = Penjualan::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-rectangle-stack';
+    protected static ?string $navigationIcon = 'heroicon-o-shopping-cart';
 
-    public static function form(Form $form): Form
+    protected static ?string $navigationGroup = 'Transaksi';
+
+    protected static ?string $modelLabel = 'Penjualan';
+
+    protected static ?string $pluralModelLabel = 'Penjualan';
+
+    public static function allowedRoles(): array
     {
-        return $form
-            ->schema([
-                Forms\Components\DatePicker::make('tanggal')
-                    ->required(),
-                Forms\Components\TextInput::make('id_pelanggan')
-                    ->maxLength(20)
-                    ->default(null),
-                Forms\Components\TextInput::make('id_user')
-                    ->maxLength(20)
-                    ->default(null),
-                Forms\Components\TextInput::make('total')
-                    ->required()
-                    ->numeric()
-                    ->default(0.00),
-                Forms\Components\TextInput::make('metode_pembayaran')
-                    ->required()
-                    ->maxLength(20)
-                    ->default('Tunai'),
-                Forms\Components\DatePicker::make('jatuh_tempo'),
-                Forms\Components\TextInput::make('status_verifikasi')
-                    ->required()
-                    ->maxLength(20)
-                    ->default('Menunggu'),
-                Forms\Components\TextInput::make('verified_by')
-                    ->maxLength(20)
-                    ->default(null),
-                Forms\Components\DateTimePicker::make('verified_at'),
-            ]);
+        return ['Owner', 'Sales', 'Admin Penjualan', 'Kasir'];
+    }
+
+    public static function canCreate(): bool
+    {
+        return false;
+    }
+
+    public static function canEdit($record): bool
+    {
+        return false;
+    }
+
+    public static function canDelete($record): bool
+    {
+        return false;
     }
 
     public static function table(Table $table): Table
     {
         return $table
+            ->defaultSort('tanggal', 'desc')
             ->columns([
                 Tables\Columns\TextColumn::make('id_penjualan')
-                    ->searchable(),
-                Tables\Columns\TextColumn::make('tanggal')
-                    ->date()
+                    ->label('No. Faktur')
+                    ->searchable()
                     ->sortable(),
-                Tables\Columns\TextColumn::make('id_pelanggan')
-                    ->searchable(),
-                Tables\Columns\TextColumn::make('id_user')
+                Tables\Columns\TextColumn::make('tanggal')
+                    ->date('d/m/Y')
+                    ->sortable(),
+                Tables\Columns\TextColumn::make('pelanggan.nama')
+                    ->label('Pelanggan')
                     ->searchable(),
                 Tables\Columns\TextColumn::make('total')
-                    ->numeric()
+                    ->money('IDR')
                     ->sortable(),
                 Tables\Columns\TextColumn::make('metode_pembayaran')
-                    ->searchable(),
-                Tables\Columns\TextColumn::make('jatuh_tempo')
-                    ->date()
-                    ->sortable(),
+                    ->label('Metode')
+                    ->badge()
+                    ->color(fn (string $state): string => $state === 'Tunai' ? 'success' : 'warning'),
                 Tables\Columns\TextColumn::make('status_verifikasi')
-                    ->searchable(),
-                Tables\Columns\TextColumn::make('verified_by')
-                    ->searchable(),
-                Tables\Columns\TextColumn::make('verified_at')
-                    ->dateTime()
-                    ->sortable(),
+                    ->label('Status')
+                    ->badge()
+                    ->color(fn (string $state): string => $state === 'Terverifikasi' ? 'success' : 'warning'),
+                Tables\Columns\TextColumn::make('sisa_piutang')
+                    ->label('Sisa Piutang')
+                    ->money('IDR')
+                    ->state(fn (Penjualan $record): float => $record->sisa_piutang),
+                Tables\Columns\TextColumn::make('jatuh_tempo')
+                    ->label('Jatuh Tempo')
+                    ->date('d/m/Y')
+                    ->placeholder('-')
+                    ->toggleable(isToggledHiddenByDefault: true),
+                Tables\Columns\TextColumn::make('user.nama_user')
+                    ->label('Kasir')
+                    ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
-                //
+                Tables\Filters\SelectFilter::make('status_verifikasi')
+                    ->label('Status')
+                    ->options([
+                        'Menunggu' => 'Menunggu',
+                        'Terverifikasi' => 'Terverifikasi',
+                        'Dibatalkan' => 'Dibatalkan',
+                    ]),
+                Tables\Filters\SelectFilter::make('metode_pembayaran')
+                    ->label('Metode')
+                    ->options([
+                        'Tunai' => 'Tunai',
+                        'Kredit' => 'Kredit',
+                    ]),
             ])
-            ->actions([
-                Tables\Actions\EditAction::make(),
-            ])
-            ->bulkActions([
-                Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
-                ]),
-            ]);
-    }
-
-    public static function getRelations(): array
-    {
-        return [
-            //
-        ];
+            ->actions([])
+            ->bulkActions([]);
     }
 
     public static function getPages(): array
     {
         return [
             'index' => Pages\ListPenjualans::route('/'),
-            'create' => Pages\CreatePenjualan::route('/create'),
-            'edit' => Pages\EditPenjualan::route('/{record}/edit'),
         ];
     }
 }

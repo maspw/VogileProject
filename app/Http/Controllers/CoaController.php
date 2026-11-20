@@ -13,17 +13,18 @@ class CoaController extends Controller
     {
         $query = Coa::query();
 
-        if ($request->filled('search')) {
-            $s = $request->search;
-            $query->where('kode_akun', 'LIKE', "%{$s}%")
-                ->orWhere('nama_akun', 'LIKE', "%{$s}%");
+        if ($s = $request->input('search')) {
+            $query->where(function ($q) use ($s) {
+                $q->where('kode_akun', 'LIKE', "%{$s}%")
+                    ->orWhere('nama_akun', 'LIKE', "%{$s}%");
+            });
         }
 
         if ($request->filled('kategori')) {
             $query->where('kategori', $request->kategori);
         }
 
-        $coa = $query->orderBy('kode_akun')->paginate(20);
+        $coa = $query->orderBy('kode_akun')->paginate(20)->withQueryString();
 
         if ($request->wantsJson()) {
             return response()->json($coa);

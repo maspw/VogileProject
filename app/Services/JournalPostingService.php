@@ -35,8 +35,8 @@ class JournalPostingService
 
         foreach ($entries as $e) {
             $kode = (int) $e['kode_akun'];
-            $deb = (int) ($e['debit'] ?? 0);
-            $kre = (int) ($e['kredit'] ?? 0);
+            $deb = (int) round((float) ($e['debit'] ?? 0));
+            $kre = (int) round((float) ($e['kredit'] ?? 0));
             $ket = $e['keterangan'] ?? '';
 
             if (!isset($grouped[$kode])) {

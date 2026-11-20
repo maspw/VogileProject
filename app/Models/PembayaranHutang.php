@@ -20,6 +20,7 @@ class PembayaranHutang extends Model
         'nota_pembelian',
         'tanggal',
         'total',
+        'metode_bayar',
         'id_user',
         'status_verifikasi',
         'verified_by',

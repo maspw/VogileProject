@@ -47,6 +47,7 @@ class DatabaseSeeder extends Seeder
             $this->seedPelanggan();
             $this->seedPurchaseOrderAndPembelian();
             $this->seedPenjualanAndPiutang();
+            $this->seedStockMovements();
             $this->seedBebanOperasional();
             $this->seedFraudAnomalies();
         });
@@ -331,6 +332,7 @@ class DatabaseSeeder extends Seeder
                 'nota_pembelian' => 'PB-202609-001',
                 'tanggal' => '2026-09-25',
                 'total' => 3000000,
+                'metode_bayar' => 'Bank BCA',
                 'id_user' => 'U006',
                 'status_verifikasi' => 'Terverifikasi',
                 'verified_by' => 'U001',
@@ -383,6 +385,14 @@ class DatabaseSeeder extends Seeder
             ['id_penjualan' => 'PJ-202609-001', 'kode_akun' => 4101],
             ['debit' => 0, 'kredit' => 720000, 'keterangan' => 'Pendapatan penjualan tunai', 'tanggal' => '2026-09-10']
         );
+        JuPenjualan::updateOrCreate(
+            ['id_penjualan' => 'PJ-202609-001', 'kode_akun' => 5101],
+            ['debit' => 600000, 'kredit' => 0, 'keterangan' => 'Beban Pokok Penjualan atas faktur PJ-202609-001', 'tanggal' => '2026-09-10']
+        );
+        JuPenjualan::updateOrCreate(
+            ['id_penjualan' => 'PJ-202609-001', 'kode_akun' => 1104],
+            ['debit' => 0, 'kredit' => 600000, 'keterangan' => 'Pengurangan persediaan barang atas faktur PJ-202609-001', 'tanggal' => '2026-09-10']
+        );
 
         // 2. Penjualan Kredit PJ-202609-002 (Toko Surya Jaya)
         Penjualan::updateOrCreate(
@@ -415,6 +425,14 @@ class DatabaseSeeder extends Seeder
             ['id_penjualan' => 'PJ-202609-002', 'kode_akun' => 4101],
             ['debit' => 0, 'kredit' => 7800000, 'keterangan' => 'Pendapatan penjualan beras kredit', 'tanggal' => '2026-09-15']
         );
+        JuPenjualan::updateOrCreate(
+            ['id_penjualan' => 'PJ-202609-002', 'kode_akun' => 5101],
+            ['debit' => 6500000, 'kredit' => 0, 'keterangan' => 'Beban Pokok Penjualan atas faktur PJ-202609-002', 'tanggal' => '2026-09-15']
+        );
+        JuPenjualan::updateOrCreate(
+            ['id_penjualan' => 'PJ-202609-002', 'kode_akun' => 1104],
+            ['debit' => 0, 'kredit' => 6500000, 'keterangan' => 'Pengurangan persediaan barang atas faktur PJ-202609-002', 'tanggal' => '2026-09-15']
+        );
 
         // Retur Penjualan: RTJ-202609-001 (2 sak beras kutuan = 156.000)
         ReturPenjualan::updateOrCreate(
@@ -445,6 +463,14 @@ class DatabaseSeeder extends Seeder
             ['no_retur_penjualan' => 'RTJ-202609-001', 'kode_akun' => 1103],
             ['debit' => 0, 'kredit' => 156000, 'keterangan' => 'Pengurangan piutang retur penjualan beras Surya Jaya', 'tanggal' => '2026-09-18']
         );
+        JuReturPenj::updateOrCreate(
+            ['no_retur_penjualan' => 'RTJ-202609-001', 'kode_akun' => 1104],
+            ['debit' => 130000, 'kredit' => 0, 'keterangan' => 'Pengembalian persediaan dari retur RTJ-202609-001', 'tanggal' => '2026-09-18']
+        );
+        JuReturPenj::updateOrCreate(
+            ['no_retur_penjualan' => 'RTJ-202609-001', 'kode_akun' => 5101],
+            ['debit' => 0, 'kredit' => 130000, 'keterangan' => 'Pengurangan HPP atas barang retur RTJ-202609-001', 'tanggal' => '2026-09-18']
+        );
 
         // Pelunasan Sebagian Piutang: PP-202609-001 (Bayar Rp 4.000.000 via BCA)
         PelunasanPiutang::updateOrCreate(
@@ -453,6 +479,7 @@ class DatabaseSeeder extends Seeder
                 'id_penjualan' => 'PJ-202609-002',
                 'tanggal' => '2026-09-28',
                 'total' => 4000000,
+                'metode_bayar' => 'Bank BCA',
                 'id_user' => 'U004',
                 'status_verifikasi' => 'Terverifikasi',
                 'verified_by' => 'U001',
@@ -470,6 +497,78 @@ class DatabaseSeeder extends Seeder
             ['no_pelunasan' => 'PP-202609-001', 'kode_akun' => 1103],
             ['debit' => 0, 'kredit' => 4000000, 'keterangan' => 'Pengurangan piutang Surya Jaya termin 1', 'tanggal' => '2026-09-28']
         );
+    }
+
+    private function seedStockMovements(): void
+    {
+        $movements = [
+            [
+                'kode_barang' => 'BRG001',
+                'no_referensi' => 'PB-202609-001',
+                'tanggal' => '2026-09-07 10:00:00',
+                'jenis_transaksi' => 'Pembelian',
+                'masuk' => 200,
+                'keluar' => 0,
+                'saldo' => 400,
+                'harga_satuan' => 30000,
+                'keterangan' => 'Penerimaan minyak goreng dari PT Wilmar Nabati Indonesia',
+            ],
+            [
+                'kode_barang' => 'BRG001',
+                'no_referensi' => 'RTB-202609-001',
+                'tanggal' => '2026-09-09 16:00:00',
+                'jenis_transaksi' => 'Retur Pembelian',
+                'masuk' => 0,
+                'keluar' => 10,
+                'saldo' => 390,
+                'harga_satuan' => 30000,
+                'keterangan' => 'Pengembalian 10 pouch bocor ke supplier',
+            ],
+            [
+                'kode_barang' => 'BRG001',
+                'no_referensi' => 'PJ-202609-001',
+                'tanggal' => '2026-09-10 15:00:00',
+                'jenis_transaksi' => 'Penjualan',
+                'masuk' => 0,
+                'keluar' => 20,
+                'saldo' => 370,
+                'harga_satuan' => 36000,
+                'keterangan' => 'Pengiriman barang ke Warung Barokah Madura 24 Jam',
+            ],
+            [
+                'kode_barang' => 'BRG002',
+                'no_referensi' => 'PJ-202609-002',
+                'tanggal' => '2026-09-15 17:00:00',
+                'jenis_transaksi' => 'Penjualan',
+                'masuk' => 0,
+                'keluar' => 100,
+                'saldo' => 50,
+                'harga_satuan' => 78000,
+                'keterangan' => 'Pengiriman barang ke Minimarket Surya Jaya',
+            ],
+            [
+                'kode_barang' => 'BRG002',
+                'no_referensi' => 'RTJ-202609-001',
+                'tanggal' => '2026-09-18 10:00:00',
+                'jenis_transaksi' => 'Retur Penjualan',
+                'masuk' => 2,
+                'keluar' => 0,
+                'saldo' => 52,
+                'harga_satuan' => 78000,
+                'keterangan' => 'Penerimaan kembali 2 sak beras dari Minimarket Surya Jaya',
+            ],
+        ];
+
+        foreach ($movements as $m) {
+            KartuStok::updateOrCreate(
+                ['kode_barang' => $m['kode_barang'], 'no_referensi' => $m['no_referensi']],
+                $m
+            );
+        }
+
+        // Saldo akhir barang harus sama dengan mutasi terakhir pada kartu stok.
+        Barang::updateOrCreate(['kode_barang' => 'BRG001'], ['jumlah_barang' => 370]);
+        Barang::updateOrCreate(['kode_barang' => 'BRG002'], ['jumlah_barang' => 52]);
     }
 
     private function seedBebanOperasional(): void
@@ -527,6 +626,8 @@ class DatabaseSeeder extends Seeder
                     'nama_beban' => $b['nama_beban'],
                     'tanggal' => $b['tanggal'],
                     'total' => $b['total'],
+                    'kode_akun' => $b['kode_akun'],
+                    'metode_bayar' => 'Bank BCA',
                     'id_user' => $b['id_user'],
                     'status_verifikasi' => 'Terverifikasi',
                     'verified_by' => 'U001',
@@ -598,6 +699,8 @@ class DatabaseSeeder extends Seeder
                 'nama_beban' => 'Beban Ekspedisi Khusus Luar Kota Darurat',
                 'tanggal' => '2026-11-19',
                 'total' => 35000000,
+                'kode_akun' => 6104,
+                'metode_bayar' => 'Kas',
                 'id_user' => 'U007',
                 'status_verifikasi' => 'Menunggu',
                 'catatan' => 'Biaya ekspedisi tidak wajar tanpa lampiran PO/SPK resmi',
@@ -657,15 +760,21 @@ class DatabaseSeeder extends Seeder
             ]
         );
 
-        // Catat di ActivityLog
-        ActivityLog::create([
-            'id_user' => 'U001',
-            'aktivitas' => 'Inisialisasi Master Data & Audit Seeder',
-            'modul' => 'Sistem / Setup',
-            'data_lama' => null,
-            'data_baru' => ['status' => 'DatabaseSeeder berhasil di-generate secara penuh'],
-            'ip_address' => '127.0.0.1',
-            'user_agent' => 'Console / Artisan Seeder',
-        ]);
+        // Catat di ActivityLog sekali saja agar seeder tetap idempoten
+        $sudahDicatat = ActivityLog::where('id_user', 'U001')
+            ->where('aktivitas', 'Inisialisasi Master Data & Audit Seeder')
+            ->exists();
+
+        if (! $sudahDicatat) {
+            ActivityLog::create([
+                'id_user' => 'U001',
+                'aktivitas' => 'Inisialisasi Master Data & Audit Seeder',
+                'modul' => 'Sistem / Setup',
+                'data_lama' => null,
+                'data_baru' => ['status' => 'DatabaseSeeder berhasil di-generate secara penuh'],
+                'ip_address' => '127.0.0.1',
+                'user_agent' => 'Console / Artisan Seeder',
+            ]);
+        }
     }
 }

@@ -29,8 +29,19 @@ class FraudAlert extends Model
     {
         return [
             'skor_risiko' => 'integer',
-            'bukti_json' => 'array',
         ];
+    }
+
+    public function getBuktiArrayAttribute(): array
+    {
+        $decoded = json_decode((string) $this->bukti_json, true);
+
+        return is_array($decoded) ? $decoded : [];
+    }
+
+    public function setBuktiJsonAttribute(mixed $value): void
+    {
+        $this->attributes['bukti_json'] = is_array($value) ? json_encode($value) : $value;
     }
 
     public function pelaku(): BelongsTo

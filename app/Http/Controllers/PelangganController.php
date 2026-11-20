@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Requests\StorePelangganRequest;
 use App\Http\Requests\UpdatePelangganRequest;
 use App\Models\Pelanggan;
+use App\Services\DocumentNumberGenerator;
 use Illuminate\Http\Request;
 
 class PelangganController extends Controller
@@ -13,14 +14,15 @@ class PelangganController extends Controller
     {
         $query = Pelanggan::query();
 
-        if ($request->filled('search')) {
-            $s = $request->search;
-            $query->where('id_pelanggan', 'LIKE', "%{$s}%")
-                ->orWhere('nama', 'LIKE', "%{$s}%")
-                ->orWhere('no_telp', 'LIKE', "%{$s}%");
+        if ($s = $request->input('search')) {
+            $query->where(function ($q) use ($s) {
+                $q->where('id_pelanggan', 'LIKE', "%{$s}%")
+                    ->orWhere('nama', 'LIKE', "%{$s}%")
+                    ->orWhere('no_telp', 'LIKE', "%{$s}%");
+            });
         }
 
-        $pelanggan = $query->orderBy('nama')->paginate(15);
+        $pelanggan = $query->orderBy('nama')->paginate(15)->withQueryString();
 
         if ($request->wantsJson()) {
             return response()->json($pelanggan);
@@ -31,7 +33,11 @@ class PelangganController extends Controller
 
     public function store(StorePelangganRequest $request)
     {
-        $pelanggan = Pelanggan::create($request->validated());
+        $data = $request->validated();
+        $data['id_pelanggan'] = ($data['id_pelanggan'] ?? null)
+            ?: DocumentNumberGenerator::master('PLG', 'pelanggan', 'id_pelanggan');
+
+        $pelanggan = Pelanggan::create($data);
 
         if ($request->wantsJson()) {
             return response()->json(['message' => 'Pelanggan berhasil ditambahkan', 'data' => $pelanggan], 201);

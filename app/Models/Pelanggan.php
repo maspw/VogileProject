@@ -28,6 +28,11 @@ class Pelanggan extends Model
         ];
     }
 
+    protected $appends = [
+        'total_piutang',
+        'sisa_limit',
+    ];
+
     public function penjualan(): HasMany
     {
         return $this->hasMany(Penjualan::class, 'id_pelanggan', 'id_pelanggan');
@@ -35,11 +40,20 @@ class Pelanggan extends Model
 
     public function getTotalPiutangAttribute(): float
     {
-        return (float) $this->penjualan()
+        $penjualan = $this->penjualan()
             ->where('metode_pembayaran', 'Kredit')
+            ->where('status_verifikasi', 'Terverifikasi');
+
+        $ids = (clone $penjualan)->pluck('id_penjualan');
+        $total = (float) (clone $penjualan)->sum('total');
+        $terbayar = (float) PelunasanPiutang::whereIn('id_penjualan', $ids)
             ->where('status_verifikasi', 'Terverifikasi')
-            ->get()
-            ->sum('sisa_piutang');
+            ->sum('total');
+        $diretur = (float) ReturPenjualan::whereIn('id_penjualan', $ids)
+            ->where('status_verifikasi', 'Terverifikasi')
+            ->sum('total');
+
+        return (float) max(0, $total - $terbayar - $diretur);
     }
 
     public function getSisaLimitAttribute(): float

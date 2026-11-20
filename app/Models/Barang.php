@@ -67,6 +67,31 @@ class Barang extends Model
         return $this->hasMany(KartuStok::class, 'kode_barang', 'kode_barang');
     }
 
+    public function detailPo(): HasMany
+    {
+        return $this->hasMany(DetailPo::class, 'kode_barang', 'kode_barang');
+    }
+
+    public function detailReturPenjualan(): HasMany
+    {
+        return $this->hasMany(DetailReturPenjualan::class, 'kode_barang', 'kode_barang');
+    }
+
+    public function detailReturPembelian(): HasMany
+    {
+        return $this->hasMany(DetailReturPembelian::class, 'kode_barang', 'kode_barang');
+    }
+
+    public function hasTransaksi(): bool
+    {
+        return $this->detailPenjualan()->exists()
+            || $this->detailPembelian()->exists()
+            || $this->kartuStok()->exists()
+            || $this->detailPo()->exists()
+            || $this->detailReturPenjualan()->exists()
+            || $this->detailReturPembelian()->exists();
+    }
+
     // Scopes
     public function scopeStokMenipis(Builder $query): Builder
     {

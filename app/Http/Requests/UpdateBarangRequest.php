@@ -13,8 +13,6 @@ class UpdateBarangRequest extends FormRequest
 
     public function rules(): array
     {
-        $kode = $this->route('barang') ?? $this->kode_barang;
-
         return [
             'nama_barang' => 'required|string|max:150',
             'harga_barang' => 'required|numeric|min:0',

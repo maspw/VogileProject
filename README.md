@@ -1,59 +1,108 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Vogile Enterprise
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Sistem informasi akuntansi & distribusi bahan pokok untuk **PT VOGILE Distribusi**.
+Dibangun dengan Laravel 12, Filament 3, MySQL, dan Tailwind CSS (via CDN pada layout internal).
 
-## About Laravel
+## Fitur Utama
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+- **Master data**: barang (SKU), pelanggan dengan limit piutang, supplier, dan chart of accounts (COA).
+- **Pembelian**: purchase order, nota pembelian (tunai/kredit), retur pembelian, pembayaran hutang.
+- **Penjualan**: faktur penjualan (tunai/kredit), retur penjualan, pelunasan piutang, validasi limit piutang.
+- **Beban operasional** dengan akun COA dan sumber dana (Kas / Bank BCA).
+- **Persediaan**: kartu stok perpetual dengan HPP moving average.
+- **Akuntansi**: jurnal umum otomatis dan seimbang untuk setiap transaksi terverifikasi, plus view `v_jurnal_umum`.
+- **Kontrol internal**: pemisahan tugas (pembuat tidak boleh memverifikasi transaksi sendiri, kecuali Owner), fraud alert.
+- **Dokumen PDF**: faktur penjualan, nota pembelian, retur, bukti pelunasan/pembayaran.
+- **Filament Admin Panel** di `/admin` dengan otorisasi berbasis role.
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+## Kebutuhan
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+- PHP 8.2+ (ekstensi `pdo_mysql`, `mbstring`, `zip`, `gd`/`imagick` untuk dompdf)
+- Composer 2
+- MySQL/MariaDB (XAMPP) — proyek ini dikonfigurasi untuk port `3307`
+- Node.js hanya diperlukan jika ingin mengompilasi aset Vite (UI utama memakai Tailwind CDN)
 
-## Learning Laravel
+## Instalasi
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework. You can also check out [Laravel Learn](https://laravel.com/learn), where you will be guided through building a modern Laravel application.
+```bash
+composer install
+cp .env.example .env
+php artisan key:generate
+```
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+Sesuaikan koneksi database di `.env` (nama database default: `db_vogile`), lalu:
 
-## Laravel Sponsors
+```bash
+php artisan migrate --seed
+php artisan storage:link
+```
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+Jalankan aplikasi:
 
-### Premium Partners
+```bash
+php artisan serve
+# atau akses http://localhost/Vogile-Project bila memakai XAMPP
+```
 
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
+## Akun Demo (hasil seeder)
 
-## Contributing
+Semua akun memakai password `password123`.
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+| Username | Email | Role |
+| --- | --- | --- |
+| `admin` | admin@vogile.com | Owner (super admin) |
+| `owner` | owner@vogile.com | Owner |
+| `sales` | sales@vogile.com | Sales |
+| `adminpenjualan` | adminpenjualan@vogile.com | Admin Penjualan |
+| `adminpiutang` | adminpiutang@vogile.com | Admin Piutang |
+| `adminpembelian` | adminpembelian@vogile.com | Admin Pembelian |
+| `adminhutang` | adminhutang@vogile.com | Admin Hutang |
+| `kasir` | kasir@vogile.com | Kasir |
 
-## Code of Conduct
+## Alur Kerja Transaksi
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+1. Transaksi dibuat dengan status **Menunggu** (tidak mengubah stok maupun jurnal).
+2. Verifikasi oleh pengguna lain (Owner atau role terkait) memicu:
+   - mutasi kartu stok & update stok barang,
+   - posting jurnal umum yang divalidasi seimbang (`Σdebit = Σkredit`).
+3. Retur hanya bisa dilakukan atas transaksi **Terverifikasi**, dibatasi sisa kuantitas yang belum diretur.
+4. Pelunasan/pembayaran hanya untuk faktur **Kredit** terverifikasi, dibatasi sisa saldo yang tersedia.
+5. Penjualan kredit divalidasi terhadap limit piutang pelanggan.
 
-## Security Vulnerabilities
+Kode akun standar: Kas 1101, Bank BCA 1102, Piutang Usaha 1103, Persediaan 1104,
+Hutang Usaha 2101, Pendapatan Penjualan 4101, Retur Penjualan 4102, HPP 5101, Beban 61xx.
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+Nomor dokumen dibuat otomatis dengan format `PREFIKS-YYYYMM-XXX`
+(mis. `PJ-202609-001`) melalui `App\Services\DocumentNumberGenerator`.
 
-## License
+## Halaman Internal
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+| Modul | URL |
+| --- | --- |
+| Dashboard | `/dashboard` |
+| Barang / Pelanggan / Supplier / COA | `/barang`, `/pelanggan`, `/supplier`, `/coa` |
+| Purchase Order | `/po` |
+| Pembelian / Retur / Pembayaran Hutang | `/pembelian`, `/retur-pembelian`, `/pembayaran-hutang` |
+| Penjualan / Retur / Pelunasan Piutang | `/penjualan`, `/retur-penjualan`, `/pelunasan-piutang` |
+| Beban Operasional | `/beban` |
+| Filament Admin Panel | `/admin` |
+
+Akses tiap modul dibatasi middleware `role:` sesuai tanggung jawab masing-masing role;
+Owner (dan `U000`) memiliki akses penuh. Resource transaksi di Filament bersifat read-only
+agar semua mutasi tetap melewati controller (stok, jurnal, dan validasi).
+
+## Pengujian
+
+```bash
+php artisan test
+```
+
+Test menggunakan SQLite in-memory (lihat `phpunit.xml`) dan mencakup autentikasi,
+otorisasi per role, pemisahan tugas, validasi pelunasan/retur, smoke test seluruh halaman,
+serta rekonsiliasi data seeder (saldo stok = mutasi kartu stok terakhir, jurnal seimbang).
+
+## Catatan Keamanan
+
+- `.env` berisi `APP_KEY` dan kredensial database; jangan di-commit.
+- Login dibatasi rate limit 5 percobaan/menit.
+- Validasi server-side diterapkan pada seluruh input transaksi.

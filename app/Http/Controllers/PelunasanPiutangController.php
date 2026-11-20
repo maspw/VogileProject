@@ -24,19 +24,28 @@ class PelunasanPiutangController extends Controller
     {
         $query = PelunasanPiutang::with(['penjualan.pelanggan', 'user', 'verifier']);
 
-        if ($request->filled('search')) {
-            $s = $request->search;
-            $query->where('no_pelunasan', 'LIKE', "%{$s}%")
-                ->orWhere('id_penjualan', 'LIKE', "%{$s}%");
+        if ($s = $request->input('search')) {
+            $query->where(function ($q) use ($s) {
+                $q->where('no_pelunasan', 'LIKE', "%{$s}%")
+                    ->orWhere('id_penjualan', 'LIKE', "%{$s}%");
+            });
         }
 
-        $pelunasans = $query->orderBy('tanggal', 'desc')->paginate(15);
+        $pelunasans = $query->orderBy('tanggal', 'desc')->paginate(15)->withQueryString();
 
         if ($request->wantsJson()) {
             return response()->json($pelunasans);
         }
 
-        return view('transaksi.pelunasan_piutang.index', compact('pelunasans'));
+        $penjualans = Penjualan::with('pelanggan')
+            ->where('status_verifikasi', 'Terverifikasi')
+            ->where('metode_pembayaran', 'Kredit')
+            ->orderBy('tanggal', 'desc')
+            ->get()
+            ->filter(fn ($p) => $p->sisa_piutang_tersedia > 0)
+            ->values();
+
+        return view('transaksi.pelunasan_piutang.index', compact('pelunasans', 'penjualans'));
     }
 
     public function store(Request $request)
@@ -45,25 +54,35 @@ class PelunasanPiutangController extends Controller
             'id_penjualan' => 'required|string|exists:penjualan,id_penjualan',
             'tanggal' => 'required|date',
             'total' => 'required|numeric|min:1',
-            'metode_bayar' => 'nullable|in:Kas,Bank BCA',
+            'metode_bayar' => 'required|in:Kas,Bank BCA',
             'catatan' => 'nullable|string',
         ]);
 
         $penjualan = Penjualan::findOrFail($request->id_penjualan);
-        if ($penjualan->sisa_piutang < $request->total) {
-            return back()->with('error', "Nominal pelunasan (Rp " . number_format($request->total) . ") melebihi sisa piutang pelanggan (Rp " . number_format($penjualan->sisa_piutang) . ").");
+
+        if ($penjualan->status_verifikasi !== 'Terverifikasi') {
+            return back()->withInput()->with('error', "Faktur {$penjualan->id_penjualan} belum terverifikasi sehingga belum dapat dilunasi.");
         }
 
-        $noPelunasan = DocumentNumberGenerator::generate('PP', 'pelunasan_piutang', 'no_pelunasan');
+        if ($penjualan->metode_pembayaran !== 'Kredit') {
+            return back()->withInput()->with('error', "Faktur {$penjualan->id_penjualan} adalah penjualan tunai dan tidak memiliki piutang.");
+        }
+
+        if ((float) $request->total > $penjualan->sisa_piutang_tersedia) {
+            return back()->withInput()->with('error', 'Nominal pelunasan (Rp ' . number_format($request->total) . ') melebihi sisa piutang yang tersedia (Rp ' . number_format($penjualan->sisa_piutang_tersedia) . ').');
+        }
+
+        $noPelunasan = DocumentNumberGenerator::generate('PP', 'pelunasan_piutang', 'no_pelunasan', $request->tanggal);
 
         $pelunasan = PelunasanPiutang::create([
             'no_pelunasan' => $noPelunasan,
             'id_penjualan' => $request->id_penjualan,
             'tanggal' => $request->tanggal,
             'total' => $request->total,
+            'metode_bayar' => $request->metode_bayar,
             'id_user' => Auth::user()->id_user ?? Auth::id(),
             'status_verifikasi' => 'Menunggu',
-            'catatan' => $request->catatan . ($request->metode_bayar ? " [Penerimaan via: {$request->metode_bayar}]" : ''),
+            'catatan' => $request->catatan,
         ]);
 
         if ($request->wantsJson()) {
@@ -82,48 +101,71 @@ class PelunasanPiutangController extends Controller
             return back()->with('info', "Pelunasan Piutang {$no_pelunasan} sudah terverifikasi.");
         }
 
-        if ($pelunasan->id_user === ($currentUser->id_user ?? Auth::id()) && !$currentUser->hasRole('Owner') && $currentUser->id_user !== 'U000') {
+        if ($pelunasan->id_user === ($currentUser->id_user ?? Auth::id()) && ! $currentUser->hasRole('Owner') && $currentUser->id_user !== 'U000') {
             abort(403, 'Pelanggaran Segregation of Duties: Anda tidak berhak memverifikasi transaksi yang Anda buat sendiri.');
         }
 
-        DB::transaction(function () use ($pelunasan, $currentUser) {
-            // Tentukan akun debit (Bank BCA 1102 atau Kas 1101)
-            $isBca = str_contains($pelunasan->catatan ?? '', 'Bank BCA');
-            $debitAkun = $isBca ? 1102 : 1101;
-            $namaAkun = $isBca ? 'Bank BCA' : 'Kas di Tangan';
+        $penjualan = $pelunasan->penjualan;
+        $totalTercatat = (float) $penjualan->pelunasanPiutang()
+            ->where('no_pelunasan', '!=', $no_pelunasan)
+            ->where('status_verifikasi', '!=', 'Ditolak')
+            ->sum('total')
+            + (float) $penjualan->retur()
+                ->where('status_verifikasi', '!=', 'Ditolak')
+                ->sum('total');
 
-            // Jurnal Pelunasan Piutang:
-            // (D) Kas/Bank = Total
-            // (K) Piutang Usaha (1103) = Total
-            $entries = [
-                [
-                    'kode_akun' => $debitAkun,
-                    'debit' => (int) $pelunasan->total,
-                    'kredit' => 0,
-                    'keterangan' => "Penerimaan {$namaAkun} atas pelunasan piutang faktur {$pelunasan->id_penjualan}",
-                ],
-                [
-                    'kode_akun' => 1103,
-                    'debit' => 0,
-                    'kredit' => (int) $pelunasan->total,
-                    'keterangan' => "Pengurangan piutang usaha pelanggan {$pelunasan->penjualan->pelanggan->nama}",
-                ],
-            ];
+        if ($totalTercatat + (float) $pelunasan->total > (float) $penjualan->total) {
+            $message = "Total pelunasan melebihi nilai faktur {$penjualan->id_penjualan}. Periksa pelunasan lain yang masih menunggu verifikasi.";
 
-            $this->journalService->post(
-                'ju_piutang',
-                'no_pelunasan',
-                $pelunasan->no_pelunasan,
-                $pelunasan->tanggal->toDateString(),
-                $entries
-            );
+            if ($request->wantsJson()) {
+                return response()->json(['message' => $message], 422);
+            }
 
-            // Update status
-            $pelunasan->status_verifikasi = 'Terverifikasi';
-            $pelunasan->verified_by = $currentUser->id_user ?? Auth::id();
-            $pelunasan->verified_at = now();
-            $pelunasan->save();
-        });
+            return back()->with('error', $message);
+        }
+
+        try {
+            DB::transaction(function () use ($pelunasan, $currentUser) {
+                $isBca = $pelunasan->metode_bayar === 'Bank BCA';
+                $debitAkun = $isBca ? 1102 : 1101;
+                $namaAkun = $isBca ? 'Bank BCA' : 'Kas di Tangan';
+                $total = (int) round((float) $pelunasan->total);
+
+                $entries = [
+                    [
+                        'kode_akun' => $debitAkun,
+                        'debit' => $total,
+                        'kredit' => 0,
+                        'keterangan' => "Penerimaan {$namaAkun} atas pelunasan piutang faktur {$pelunasan->id_penjualan}",
+                    ],
+                    [
+                        'kode_akun' => 1103,
+                        'debit' => 0,
+                        'kredit' => $total,
+                        'keterangan' => "Pengurangan piutang usaha pelanggan {$pelunasan->penjualan->pelanggan->nama}",
+                    ],
+                ];
+
+                $this->journalService->post(
+                    'ju_piutang',
+                    'no_pelunasan',
+                    $pelunasan->no_pelunasan,
+                    $pelunasan->tanggal->toDateString(),
+                    $entries
+                );
+
+                $pelunasan->status_verifikasi = 'Terverifikasi';
+                $pelunasan->verified_by = $currentUser->id_user ?? Auth::id();
+                $pelunasan->verified_at = now();
+                $pelunasan->save();
+            });
+        } catch (Exception $e) {
+            if ($request->wantsJson()) {
+                return response()->json(['message' => $e->getMessage()], 422);
+            }
+
+            return back()->with('error', $e->getMessage());
+        }
 
         if ($request->wantsJson()) {
             return response()->json(['message' => "Pelunasan Piutang {$no_pelunasan} berhasil diverifikasi."]);

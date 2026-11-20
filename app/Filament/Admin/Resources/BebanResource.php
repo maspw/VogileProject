@@ -2,102 +2,96 @@
 
 namespace App\Filament\Admin\Resources;
 
+use App\Filament\Admin\Concerns\HasRoleAccess;
 use App\Filament\Admin\Resources\BebanResource\Pages;
-use App\Filament\Admin\Resources\BebanResource\RelationManagers;
 use App\Models\Beban;
-use Filament\Forms;
-use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
-use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\SoftDeletingScope;
 
 class BebanResource extends Resource
 {
+    use HasRoleAccess;
+
     protected static ?string $model = Beban::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-rectangle-stack';
+    protected static ?string $navigationIcon = 'heroicon-o-banknotes';
 
-    public static function form(Form $form): Form
+    protected static ?string $navigationGroup = 'Akuntansi';
+
+    protected static ?string $modelLabel = 'Beban Operasional';
+
+    protected static ?string $pluralModelLabel = 'Beban Operasional';
+
+    public static function allowedRoles(): array
     {
-        return $form
-            ->schema([
-                Forms\Components\TextInput::make('nama_beban')
-                    ->required()
-                    ->maxLength(100),
-                Forms\Components\DatePicker::make('tanggal')
-                    ->required(),
-                Forms\Components\TextInput::make('total')
-                    ->required()
-                    ->numeric()
-                    ->default(0.00),
-                Forms\Components\TextInput::make('id_user')
-                    ->maxLength(20)
-                    ->default(null),
-                Forms\Components\TextInput::make('status_verifikasi')
-                    ->required()
-                    ->maxLength(20)
-                    ->default('Menunggu'),
-                Forms\Components\TextInput::make('verified_by')
-                    ->maxLength(20)
-                    ->default(null),
-                Forms\Components\DateTimePicker::make('verified_at'),
-                Forms\Components\Textarea::make('catatan')
-                    ->columnSpanFull(),
-            ]);
+        return ['Owner', 'Kasir'];
+    }
+
+    public static function canCreate(): bool
+    {
+        return false;
+    }
+
+    public static function canEdit($record): bool
+    {
+        return false;
+    }
+
+    public static function canDelete($record): bool
+    {
+        return false;
     }
 
     public static function table(Table $table): Table
     {
         return $table
+            ->defaultSort('tanggal', 'desc')
             ->columns([
                 Tables\Columns\TextColumn::make('id_beban')
-                    ->searchable(),
+                    ->label('No. Beban')
+                    ->searchable()
+                    ->sortable(),
                 Tables\Columns\TextColumn::make('nama_beban')
-                    ->searchable(),
+                    ->label('Nama Beban')
+                    ->searchable()
+                    ->wrap(),
                 Tables\Columns\TextColumn::make('tanggal')
-                    ->date()
+                    ->date('d/m/Y')
                     ->sortable(),
+                Tables\Columns\TextColumn::make('coa.nama_akun')
+                    ->label('Akun')
+                    ->placeholder('-'),
                 Tables\Columns\TextColumn::make('total')
-                    ->numeric()
+                    ->money('IDR')
                     ->sortable(),
-                Tables\Columns\TextColumn::make('id_user')
-                    ->searchable(),
+                Tables\Columns\TextColumn::make('metode_bayar')
+                    ->label('Sumber Dana')
+                    ->badge(),
                 Tables\Columns\TextColumn::make('status_verifikasi')
-                    ->searchable(),
-                Tables\Columns\TextColumn::make('verified_by')
-                    ->searchable(),
-                Tables\Columns\TextColumn::make('verified_at')
-                    ->dateTime()
-                    ->sortable(),
+                    ->label('Status')
+                    ->badge()
+                    ->color(fn (string $state): string => $state === 'Terverifikasi' ? 'success' : 'warning'),
+                Tables\Columns\TextColumn::make('user.nama_user')
+                    ->label('Diinput')
+                    ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
-                //
+                Tables\Filters\SelectFilter::make('status_verifikasi')
+                    ->label('Status')
+                    ->options([
+                        'Menunggu' => 'Menunggu',
+                        'Terverifikasi' => 'Terverifikasi',
+                    ]),
             ])
-            ->actions([
-                Tables\Actions\EditAction::make(),
-            ])
-            ->bulkActions([
-                Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
-                ]),
-            ]);
-    }
-
-    public static function getRelations(): array
-    {
-        return [
-            //
-        ];
+            ->actions([])
+            ->bulkActions([]);
     }
 
     public static function getPages(): array
     {
         return [
             'index' => Pages\ListBebans::route('/'),
-            'create' => Pages\CreateBeban::route('/create'),
-            'edit' => Pages\EditBeban::route('/{record}/edit'),
         ];
     }
 }
